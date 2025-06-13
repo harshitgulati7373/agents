@@ -3,34 +3,50 @@ from search_agent import search_agent
 from planner_agent import planner_agent, WebSearchItem, WebSearchPlan
 from writer_agent import writer_agent, ReportData
 from email_agent import email_agent
+from clarifying_agent import clarifying_agent
 import asyncio
 
 class ResearchManager:
 
-    async def run(self, query: str):
-        """ Run the deep research process, yielding the status updates and the final report"""
+    
+    async def run_with_clarified_query(self, clarified_query: dict):
+        """ Run the research process with pre-clarified query """
         trace_id = gen_trace_id()
         with trace("Research trace", trace_id=trace_id):
             print(f"View trace: https://platform.openai.com/traces/trace?trace_id={trace_id}")
             yield f"View trace: https://platform.openai.com/traces/trace?trace_id={trace_id}"
-            print("Starting research...")
-            search_plan = await self.plan_searches(query)
+            print("Starting research with clarified query...")
+            yield "Planning searches with your clarified requirements..."
+            search_plan = await self.plan_searches(clarified_query)
             yield "Searches planned, starting to search..."     
             search_results = await self.perform_searches(search_plan)
             yield "Searches complete, writing report..."
-            report = await self.write_report(query, search_results)
+            report = await self.write_report(clarified_query['original_query'], search_results)
             yield "Report written, sending email..."
             await self.send_email(report)
             yield "Email sent, research complete"
             yield report.markdown_report
         
-
-    async def plan_searches(self, query: str) -> WebSearchPlan:
+    async def clarify_query(self, query: str) -> dict:
+        """ Clarify the query """
+        print("Clarifying query...")
+        result = await Runner.run(
+            clarifying_agent,
+            query,
+        )
+        print("Query clarified")
+        return {
+            "original_query": query,
+            "clarifying_questions": result.final_output
+        }
+    
+    async def plan_searches(self, clarified_query: dict) -> WebSearchPlan:
         """ Plan the searches to perform for the query """
         print("Planning searches...")
+        input_text = f"Original Query: {clarified_query['original_query']}\n\nClarifying Questions and Analysis:\n{clarified_query['clarifying_questions']}"
         result = await Runner.run(
             planner_agent,
-            f"Query: {query}",
+            input_text,
         )
         print(f"Will perform {len(result.final_output.searches)} searches")
         return result.final_output_as(WebSearchPlan)
